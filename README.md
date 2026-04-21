@@ -1,13 +1,23 @@
 # demo-webhook-server
 
-Simple NestJS app that receives Mural webhooks and verifies their ECDSA signatures.
+Simple NestJS app that exposes an endpoint that can receive Mural webhooks and verifies their ECDSA signatures.
+When an event is received, it will print out the event body to the console.
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env   # then paste the dev public key into WEBHOOK_SECRET
-npm run start          # listens on http://localhost:8081 by default
+```
+
+## Running the server
+
+```bash
+npm run start          # one-off, listens on http://localhost:8081 by default
+npm run start:dev      # watch mode — auto-reloads on file changes
+npm run start:debug    # watch mode + Node debugger attached
+npm run build          # compile TypeScript to dist/
+npm run start:prod     # run the compiled build (node dist/main)
 ```
 
 ## Endpoints
