@@ -24,6 +24,30 @@ npm run start:prod     # run the compiled build (node dist/main)
 
 - `POST /test/webhook` — verifies signature using the public key in `WEBHOOK_SECRET`
 
+## Exposing the server publicly
+
+Mural requires an HTTPS URL it can reach, so `localhost` won't work — tunnel to your local server with one of the following. Start the server first, then open a tunnel in a second terminal.
+
+### ngrok
+
+```bash
+brew install ngrok        # or see https://ngrok.com/download
+ngrok config add-authtoken <token>   # one-time, from https://dashboard.ngrok.com
+ngrok http 8081
+```
+
+Copy the `https://...ngrok.app` URL from the output. Your webhook URL is `https://<subdomain>.ngrok.app/test/webhook`.
+
+### localtunnel
+
+```bash
+npx localtunnel --port 8081
+```
+
+Copy the `https://...loca.lt` URL from the output. Your webhook URL is `https://<subdomain>.loca.lt/test/webhook`.
+
+Note: the tunnel URL changes each run (unless you pay for a reserved domain), so you'll need to update the webhook's `url` via `PATCH /api/webhooks/{webhookId}` each time you restart.
+
 ## Creating a webhook with the Mural API
 
 Each webhook gets its own ECDSA keypair. Mural signs events with the private half; you verify with the public half returned at creation. Drop that public key into `WEBHOOK_SECRET`.
@@ -35,7 +59,7 @@ curl -X POST https://api.muralpay.com/api/webhooks \
   -H "Authorization: Bearer $MURAL_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "http://localhost:8081/test/webhook",
+    "url": "https://<your-tunnel-subdomain>.ngrok.app/test/webhook",
     "categories": ["MURAL_ACCOUNT_BALANCE_ACTIVITY"]
   }'
 ```
