@@ -1,7 +1,7 @@
 # demo-webhook-server
 
 Simple NestJS app that exposes an endpoint that can receive Mural webhooks and verifies their ECDSA signatures.
-When an event is received, it will print out the event body to the console.
+When a verified event is received, it prints the event to the console.
 
 ## Setup
 
@@ -18,11 +18,24 @@ npm run start:dev      # watch mode — auto-reloads on file changes
 npm run start:debug    # watch mode + Node debugger attached
 npm run build          # compile TypeScript to dist/
 npm run start:prod     # run the compiled build (node dist/main)
+npm test               # run the verification tests
 ```
 
 ## Endpoints
 
-- `POST /test/webhook` — verifies signature using the public key in `WEBHOOK_SECRET`
+- `POST /test/webhook`: verifies the signature using the public key in `WEBHOOK_SECRET`
+
+## How verification works
+
+See [Signature Validation](https://developers.muralpay.com/docs/signature-validation) for the full spec. The endpoint:
+
+1. Requires the `x-mural-webhook-signature` and `x-mural-webhook-timestamp` headers.
+2. Rejects timestamps that aren't valid ISO 8601 or are more than 5 minutes from the server's clock, to limit replay attacks.
+3. Verifies the base64 DER ECDSA signature over `<timestamp>.<raw body>` with SHA-256. It uses the **raw request bytes** (`rawBody: true` in `main.ts`). Don't verify against `JSON.stringify(req.body)`: re-serializing can change whitespace or key order and break valid signatures.
+4. Parses and logs the body only after the signature checks out.
+5. Skips events whose `eventId` it has already processed. Mural retries failed deliveries (up to 3 attempts over about 6 minutes), so the same event can arrive more than once, each delivery with a new `deliveryId` and `attemptNumber`. The demo keeps processed IDs in memory; use a durable store in production.
+
+It returns `200` for verified events (including duplicates) and `401` for missing headers or failed verification. Mural treats any non-200 response as a failed delivery and retries it, except `404`, which fails the delivery immediately with no retry.
 
 ## Exposing the server publicly
 
@@ -79,9 +92,20 @@ Response (`MuralWebhook`):
 
 Copy `publicKey` into `WEBHOOK_SECRET` in your `.env` (keep the `\n` escapes; the app converts them at runtime).
 
-Valid categories: `MURAL_ACCOUNT_BALANCE_ACTIVITY`, `BUSINESS_VERIFICATION_STATUS`, `ORGANIZATION_TOS`, `PAYOUT_REQUEST`. Max 5 webhooks per org.
+Valid categories: `MURAL_ACCOUNT_BALANCE_ACTIVITY`, `BUSINESS_VERIFICATION_STATUS`, `ORGANIZATION_TOS`, `PAYOUT_REQUEST`, `PAYIN`, `COMPLIANCE_REVIEW`, `RFI`. See [Event Types](https://developers.muralpay.com/docs/event-types) for each category's payloads. Max 5 webhooks per org.
 
-### 2. Activate it
+### 2. (Optional) Check connectivity with a ping
+
+Ping works on a `DISABLED` webhook, so you can confirm your tunnel and signature verification work before activating it:
+
+```bash
+curl -X POST https://api.muralpay.com/api/webhooks/{webhookId}/ping \
+  -H "Authorization: Bearer $MURAL_API_KEY"
+```
+
+It sends a signed test request to your URL and returns the outcome: `{"type": "success", ...}`, `{"type": "httpError", ...}` (your endpoint returned a non-2xx status, for example a `401` from failed verification) or `{"type": "unreachable", ...}`.
+
+### 3. Activate it
 
 ```bash
 curl -X PATCH https://api.muralpay.com/api/webhooks/{webhookId}/status \
@@ -90,7 +114,7 @@ curl -X PATCH https://api.muralpay.com/api/webhooks/{webhookId}/status \
   -d '{"status": "ACTIVE"}'
 ```
 
-### 3. (Optional) Send a test event
+### 4. (Optional) Send a test event
 
 ```bash
 curl -X POST https://api.muralpay.com/api/webhooks/{webhookId}/send \
